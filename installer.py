@@ -26,7 +26,7 @@ def main(argv):
           print ('{}'.format(form))
           sys.exit()
 
-    os.system('echo \"export PATH=\$PATH:{}\" >> ~/.bashrc'.format(os.getcwd()))
+    os.system('chmod a+x anotomat.py && echo \"export PATH=\$PATH:{}\" >> ~/.bashrc'.format(os.getcwd()))
     
 
     sys.exit()
