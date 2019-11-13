@@ -1,1 +1,1 @@
-annotation_automator.py --genome dna_Bgt_chr-11.fasta --pos eff_chr11_anot_first_1e6.txt --cov cov_chr11_first_e6  --mincov_exon 10 --gt --cores 128 --name stryngent --out stringent
+anotomat.py --genome dna_Bgt_chr-11.fasta --pos eff_chr11_anot_first_1e6.txt --cov cov_chr11_first_e6  --mincov_exon 10 --gt --cores 128 --name stryngent --out stringent
