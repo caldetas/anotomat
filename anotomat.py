@@ -628,10 +628,11 @@ def main(argv):
         dic = {}
         txt = open(data.settings['met'], 'r+')
         for line in txt:
-            line = line.strip().split()
-            if line[0] not in dic:
-                dic[line[0]]=[]
-            dic[line[0]].append(int(line[1]))
+            if line.strip() != '' and line[0] != '#':
+                line = line.strip().split()
+                if line[0] not in dic:
+                    dic[line[0]]=[]
+                dic[line[0]].append(int(line[1]))
         data.df['pd_met'] = pd.read_csv(data.settings['met'], '\t', header=None)
         data.df['pd_met'].columns = ['chr', 'pos', 'gene', 'family']
         data.df['pd_met']['gene'] = data.df['pd_met']['gene'].str[1:]
