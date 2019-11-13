@@ -1,4 +1,4 @@
-# annotation_automator
+# anotomat
 Annotates genes based on sequence coverage, takes start position as input and gives annotated files (dna, protein, gff).  
 Use option "-h" or "--help" to get further instructions.  
 
@@ -7,7 +7,7 @@ Use option "-h" or "--help" to get further instructions.
 ## MANUAL  
 
 
-	annotation_automator.py
+	anotomat.py
 	
 	
 		--genome <genome.fasta>
