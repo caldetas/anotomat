@@ -32,17 +32,20 @@ from multiprocessing import Pool,cpu_count
 
 #instructions
 form='\nanotomat.py\n\n\n\t\
-                --genome <genome.fasta>\n\t\
-                --pos <start_positions.txt> *exact format see below*\n\t\
-                --cov <coverage> *file with \'#chr bp coverage\' from "samtools depth -a -Q 0 <file.bam>"*\n\t\
-                --mincov <int> minimal coverage of the START pos for a reannotation*default=0*\n\t\
-                --mincov_exon <int> minimal coverage for annotation of exon after intron*default=0*\n\t\
-                --gt use less stringency in defining introns *G._.G defines intron*(default=GT_AG)\n\t\
-                --cores <int> number of cores used *default=(cpu_count-1)*\n\t\
-                --name <gene name> *default=\'genes\'*\n\t\
-                --out <name for output files> *default=\'genes\'*\n\n\n\
+--genome <genome.fasta>\n\t\
+--pos <start_positions.txt> *exact format see below*\n\t\
+--cov <coverage> *file with \'#chr bp coverage\' from "samtools depth -a -Q 0 <file.bam>"*\n\n\t\
+--mincov <int> minimal coverage of the START pos for a reannotation*default=0*\n\t\
+--mincov_exon <int> minimal coverage for annotation of exon after intron*default=0*\n\t\
+--gt use less stringency in defining introns *G._.G defines intron*(default=GT_AG)\n\t\
+--cores <int> number of cores used *default=(cpu_count-1)*\n\t\
+--name <gene name> *default=\'genes\' + <int>[0000-9999]*\n\t\
+--out <name for output files> *default=\'genes\'*\n\n\n\
 EXAMPLE for start_positions.txt:\n\n\
+Bgt_chr-01	39472\n\
+Bgt_chr-01	47323	~	#\n\
 Bgt_chr-01	49207	~BgtAcSP-31373	#make a comment\n\
+Bgt_chr-01	85828    #only comment\n\
 Bgt_chr-01	284818	~BgtE-20066	#tab separated???\n\
 Bgt_chr-01	300256	~BgtE-20114	#special sign \"~ \"before gene-name!!!\n\
                 '
@@ -64,19 +67,16 @@ def print_anot_txt():
 
 def print_errors():    
     #print ERRORS
-    df = data.df['faulty'].loc[data.df['faulty'].no_start == 'yes'].copy()
-    if len(df) > 0:
-        print('\n\n!!! Faulty genes without start codon: !!!\n\n\n')
-        for i in range(len(df)):
-            gene = df.iloc[i,0]
-            print(gene)
-
-    df = data.df['faulty'].loc[data.df['faulty'].no_stop == 'yes'].copy()
-    if len(df) > 0:
-        print('\n\n!!! Faulty genes without stop codon: !!!\n\n\n')
-        for i in range(len(df)):
-            gene = df.iloc[i,0]
-            print(gene)
+    lyst = data.df['faulty_start']
+    if len(lyst) > 0:
+        print('\n\n!!! Faulty genes without start codon were not annotated !!!\n')
+        for i in lyst:
+            print('_'.join(i.split('_')[:-1]), i.split('_')[-1], sep='\t')
+    lyst = data.df['faulty_stop']
+    if len(lyst) > 0:
+        print('\n\n!!! Faulty genes without stop codon were not annotated !!!\n\n\n')
+        for i in lyst:
+            print('_'.join(i.split('_')[:-1]), i.split('_')[-1], sep='\t')
     return
 
 
@@ -231,7 +231,7 @@ def gff_print(dic):
 
 def assemble_start_codon(chromo, pos):
             first_int = pos
-
+            faulty_lyst = []
             if data.df['genome'][chromo][int(first_int)-1:first_int+2] == 'ATG':
                 print('orientation: +')
                 data.settings['orient'] = '+'
@@ -241,9 +241,8 @@ def assemble_start_codon(chromo, pos):
             else:
                 
                 print('ERROR: no start CODON!', chromo, pos)
-                gene = data.df['pd_met'].loc[data.df['pd_met'].check == chromo + '_' +str(pos), 'gene'].values[0]
-                data.df['faulty'].loc[data.df['faulty'].gene == gene, 'no_start'] ='yes'
-            return
+                faulty_lyst.append(chromo + '_' +str(pos))
+            return faulty_lyst
 
 def assemble_seq():
     dic = {}
@@ -312,19 +311,22 @@ def assemble_seq():
 def annotator_multi(core):
     temp=[]
     chromo_in_use = ''
+    faulty_start = []
+    faulty_stop = []
     for chromo in data.settings['chromo_lyst'][core]:
         print()
         print('core:\t', core, sep='')
         print('chromo:\t', chromo, sep='')
         print()
-        if chromo in data.df['met']:
-            for pos in data.df['met'][chromo]:
+        if chromo in set(data.df['pd_met']['chr'].values.tolist()):
+            for pos in data.df['pd_met'].loc[data.df['pd_met']['chr'] == chromo, 'pos']:
                 print('\nannotating:', chromo, pos)
-                assemble_start_codon(chromo, pos)
-                
+                faulty = assemble_start_codon(chromo, pos)
+                faulty_start.extend(faulty)
+                faulty = ''
                 gene = data.df['pd_met'].loc[data.df['pd_met'].check == chromo + '_' +str(pos), 'gene'].values[0]
                 #skip genes without start
-                if data.df['faulty'].loc[data.df['faulty'].gene==gene, 'no_start'].values[0] == 'yes':
+                if chromo + '_' +str(pos) in faulty_start:
                     continue
                 #create subset coverage for chromosome
                 if chromo_in_use != chromo:
@@ -357,8 +359,7 @@ def annotator_multi(core):
                         cnt+=1
                         #break if leaving chromosome
                         if cnt == len(df)-3:
-    
-                            data.df['faulty'].loc[data.df['faulty'].gene == gene, 'no_stop'] = 'yes'
+                            faulty_stop.append(chromo + '_' +str(pos))
                             break
                         new_cov =df.iloc[cnt,1]
                         #avoid division by zero
@@ -424,8 +425,9 @@ def annotator_multi(core):
                     state='exon'
                     while True:
                         cnt-=1
+                        #break if leaving chromosome
                         if cnt == 1:
-                            data.df['faulty'].loc[data.df['faulty'].gene == gene, 'no_stop'] = 'yes'
+                            faulty_stop.append(chromo + '_' +str(pos))
                             break
                         new_cov =df.iloc[cnt,1]
                         #avoid division by zero
@@ -472,7 +474,7 @@ def annotator_multi(core):
                                 break
 
 #                            
-    return temp
+    return temp, faulty_start, faulty_stop
 
 def prepare_multiprocess():
     print('\n***preparing for multi-processing***\n')
@@ -543,8 +545,8 @@ def main(argv):
     data.settings['cores'] = int(cpu_count()-1)
     data.df['anot'] = []
     data.df['genes'] = {}
-    data.df['faulty'] ={}
-
+    data.df['faulty_start'] =[]
+    data.df['faulty_stop'] = []
     try:
        opts, args = getopt.getopt(argv,"h",["gt", "genome=", "pos=", "cov=", "mincov=", "mincov_exon=", "cores=", "name=", "out="])
     except getopt.GetoptError:
@@ -627,25 +629,38 @@ def main(argv):
     def read_met():
         dic = {}
         txt = open(data.settings['met'], 'r+')
+        df = []
         for line in txt:
             if line.strip() != '' and line[0] != '#':
+                if len(line.split('#')) > 1:
+                    comment = line.split('#')[1]
+                    line = line.split('#')[0]
+                                          
+                original = line.strip()       
                 line = line.strip().split()
                 if line[0] not in dic:
-                    dic[line[0]]=[]
-                dic[line[0]].append(int(line[1]))
-        data.df['pd_met'] = pd.read_csv(data.settings['met'], '\t', header=None)
+                    if len(line) == 4 and line[-1][0] == '#' and line[-2][0] == '~':
+                        df.append(line)
+                    elif len(line) == 3 and '#' in line[-1]:
+                        line.insert(2, '~')
+                        df.append(line)
+                    elif len(line) == 3 and '~' in line[-1]:
+                        line.append('#')
+                        df.append(line)
+                    elif len(line) == 2:
+                        line.extend(['~', '#'])
+                        df.append(line)
+                    else:
+                        print('ERROR in start_positions.txt line:\n{}\n\n'.format(original))
+                        print(form)
+                        sys.exit()
+                
+        data.df['pd_met'] = pd.DataFrame(df)
         data.df['pd_met'].columns = ['chr', 'pos', 'gene', 'family']
+        data.df['pd_met']['pos'] = data.df['pd_met']['pos'].astype(int)
         data.df['pd_met']['gene'] = data.df['pd_met']['gene'].str[1:]
         data.df['pd_met']['family'] = data.df['pd_met']['family'].str[1:]
         data.df['pd_met']['check'] = data.df['pd_met'].chr.astype(str) + '_' + data.df['pd_met'].pos.astype(str)
-        del data.df['pd_met']['chr']
-        del data.df['pd_met']['pos']
-        data.df['met'] = dic
-        #create error df
-        data.df['faulty'] = data.df['pd_met'].copy()
-        data.df['faulty']['no_start'] = 'no'
-        data.df['faulty']['no_stop'] = 'no'
-        data.df['faulty'] = data.df['faulty'].loc[:,['gene', 'no_start', 'no_stop']]
         return
 
 
@@ -675,11 +690,23 @@ if __name__ == "__main__":
     main(sys.argv[1:])
 
     prepare_multiprocess()
+
+    #execute multi-threading
     p = Pool(data.settings['cores'])
     temp = p.map(annotator_multi, list(range(data.settings['cores'])))
+    
+    #store results to classes
     for i in temp:
-        data.df['anot'].extend(i)
+        data.df['anot'].extend(i[0])
+    for i in temp:
+        data.df['faulty_start'].extend(i[1])
+    for i in temp:
+        data.df['faulty_stop'].extend(i[2])
+
+    #sort final anot lyst
     data.df['anot'] = sorted(data.df['anot'], key=lambda x: (x[0], int(x[1])))
+
+    #fetch and sorg fasta and gff
     dic, dic_aa, dic_gff = assemble_seq()
     dic_gff, dic_aa = sort_dic(dic_gff, dic_aa)
 
@@ -695,7 +722,7 @@ if __name__ == "__main__":
 
 
             
-    print('\n\nOUTFILES:\n\n\n{}.gff\n\n{}_aa.fasta\n\n{}.fasta\n\n{}_anot.txt\n'.format(data.settings['out'],\
+    print('\n\n\nOUTFILES:\n\n\n{}.gff\n\n{}_aa.fasta\n\n{}.fasta\n\n{}_anot.txt\n'.format(data.settings['out'],\
                                                                       data.settings['out'],\
                                                                       data.settings['out'],\
                                                                       data.settings['out']))
